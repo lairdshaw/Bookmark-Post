@@ -13,4 +13,4 @@ $l['markpost_nomatk_title'] = "No Bookmarked Posts found";
 $l['markpost_title'] = "Bookmarked Posts";
 $l['markpost_inforum'] = "in Forum";
 $l['markpost_markedat'] = "Bookmarked at";
-$l['markpost_markedpost'] = "Bookmarked Post";
+$l['markpost_thead'] = "Posts Bookmarked by You";

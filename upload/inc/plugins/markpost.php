@@ -123,25 +123,35 @@ if (defined('IN_ADMINCP')) {
 	{
 		global $mybb;
 		if ((int)$post['pid'] > 0 & (int)$mybb->user['uid'] > 0) {
-			global $templates, $lang, $postcounter;
-			$un = "";
+			global $db, $templates, $lang, $postcounter;
 
 			$lang->load('markpost');
 			static $postmarked = array();
 			if (!isset($postmarked[$mybb->user['uid']][$post['tid']])) {
-				global $db;
-				$postmarked[$mybb->user['uid']][$post['tid']] = array();
-				$q = $db->simple_select('markpost', 'pid', 'uid=' . $mybb->user['uid'] . ' AND tid=' . $post['tid']);
-				while ($marked = $db->fetch_array($q)) {
-					$postmarked[$mybb->user['uid']][$post['tid']][] = $marked['pid'];
+				$markdata = array();
+				$query = $db->simple_select('markpost', 'pid', 'uid=' . $mybb->user['uid'] . ' AND tid=' . $post['tid']);
+				while ($marked = $db->fetch_array($query)) {
+					$markdata[] = $marked['pid'];
 				}
+
+				// Remove any unwanted duplicate entries from  array as well as database
+				$dupes = array_unique(array_intersect($markdata, array_unique(array_diff_key($markdata, array_unique($markdata)))));
+				if (!empty($dupes)) {
+					foreach ($dupes as $dupe) {
+						$db->query(
+							"DELETE FROM " . TABLE_PREFIX . "markpost WHERE uid=" . $mybb->user['uid'] . " AND pid={$dupe} and mid not in
+							( SELECT * FROM 
+								(SELECT MIN(mid) FROM " . TABLE_PREFIX . "markpost WHERE uid={$mybb->user['uid']} AND pid={$dupe}) AS temp
+							)"
+						);
+					}
+				}
+				$postmarked[$mybb->user['uid']][$post['tid']] = array_unique($markdata);
+			} else {
+				$markdata = $postmarked[$mybb->user['uid']][$post['tid']];
 			}
 
-			// Remove any unwanted duplicate entries from  array as well as database
-			$postmarked[$mybb->user['uid']][$post['tid']] = markpost_wipedupes($postmarked[$mybb->user['uid']][$post['tid']]);
-
-			if (in_array($post['pid'], $postmarked[$mybb->user['uid']][$post['tid']])) $un = 'un';
-
+			$un = (in_array($post['pid'], $markdata)) ? 'un' : '';
 			$post_number = my_number_format($postcounter);
 			$marktext = $lang->{'markpost_' . $un . 'mark_text'};
 			$marktip = $lang->{'markpost_' . $un . 'mark_tip'};
@@ -293,23 +303,5 @@ if (defined('IN_ADMINCP')) {
 		$templatelist .= implode(', ', array_map(function ($tpl) use ($db) {
 			return $db->escape_string(strtolower(basename($tpl, '.htm')));
 		}, (glob(MYBB_ROOT . "inc/plugins/markpost/*.htm"))));
-	}
-
-	function markpost_wipedupes($arr)
-	{
-		$dupes = array_unique(array_intersect($arr, array_unique(array_diff_key($arr, array_unique($arr)))));
-		if (!empty($dupes)) { // We got duplicate entries
-			global $db, $mybb;
-			foreach ($dupes as $dupe) {
-				$db->query(
-					"DELETE FROM " . TABLE_PREFIX . "markpost 
-					WHERE uid=" . $mybb->user['uid'] . " AND pid={$dupe} and mid not in
-					( SELECT * FROM 
-						(SELECT MIN(mid) FROM " . TABLE_PREFIX . "markpost WHERE uid=" . $mybb->user['uid'] . " AND pid={$dupe}) AS temp
-					)"
-				);
-			}
-		}
-		return array_unique($arr);
 	}
 }
