@@ -4,275 +4,276 @@ if (!defined("IN_MYBB")) {
 	die("Nice try but wrong place, smartass. Be a good boy and use navigation.");
 }
 
-$plugins->add_hook('postbit', 'markpost_stamp');
-$plugins->add_hook('showthread_start', 'markpost_commit');
-$plugins->add_hook('usercp_menu', 'markpost_ucpnav', 35);
-$plugins->add_hook('usercp_start', 'markpost_listdown');
-
-function markpost_stamp(&$post)
-{
-	global $mybb;
-	if ((int)$post['pid'] > 0 & (int)$mybb->user['uid'] > 0) {
-		global $templates, $lang, $postcounter;
-		$un = "";
-
-		$lang->load('markpost');
-		static $postmarked = array();
-		if (!isset($postmarked[$mybb->user['uid']][$post['tid']])) {
-			global $db;
-			$postmarked[$mybb->user['uid']][$post['tid']] = array();
-			$q = $db->simple_select('markpost', 'pid', 'uid=' . $mybb->user['uid'] . ' AND tid=' . $post['tid']);
-			while ($marked = $db->fetch_array($q)) {
-				$postmarked[$mybb->user['uid']][$post['tid']][] = $marked['pid'];
-			}
-		}
-		if (count($postmarked[$mybb->user['uid']][$post['tid']]) !== count(array_unique($postmarked[$mybb->user['uid']][$post['tid']]))) {
-			$postmarked[$mybb->user['uid']][$post['tid']] = markpost_wipedupes($postmarked[$mybb->user['uid']][$post['tid']]);
-		}
-		if (in_array($post['pid'], $postmarked[$mybb->user['uid']][$post['tid']])) $un = 'un';
-
-		$post_number = my_number_format($postcounter);
-		$marktext = $lang->{'markpost_' . $un . 'mark_text'};
-		$marktip = $lang->{'markpost_' . $un . 'mark_tip'};
-		//$post['mark'] = '<a href="showthread.php?action=' . $un . 'mark&pid=' . $post['pid'] . '" target="_self" style="padding: 2px 0 2px 20px; background: url(images/bookmark--' . $un . 'mark.png) no-repeat;" title="' . $lang->{'markpost_' . $un . 'mark_tip'} . '" class="postmark">' . $lang->{'markpost_' . $un . 'mark_text'} . '</a>&nbsp;';
-
-		eval("\$post['mark'] = \"" . $templates->get("postbit_marklink") . "\";"); // Stupid hook is late. Regenerate
-		eval("\$post['posturl'] = \"" . $templates->get("postbit_posturl") . "\";"); // Stupid hook is late. Regenerate
-	}
-}
-
-function markpost_commit()
-{
-	global $mybb, $lang, $db;
-
-	$mybb->input['action'] = $mybb->get_input('action');
-	if ($mybb->input['action'] == "mark" || $mybb->input['action'] == "unmark") {
-		$uid = $mybb->user['uid'];
-		$tid = $mybb->get_input('tid', MyBB::INPUT_INT);
-		$pid = $mybb->get_input('pid', MyBB::INPUT_INT);
-
-		if (!$uid || !$tid || !$pid) {
-			error_no_permission();
-		}
-		if ($mybb->input['action'] == 'mark') {
-			$db->insert_query('markpost', array('pid' => $pid, 'uid' => $uid, 'tid' => $tid, 'dateline' => TIME_NOW));
-		} else {
-			$db->delete_query("markpost", "pid='{$pid}' AND uid='{$uid}'");
-		}
-		if ($db->affected_rows()) {
-			$state = 'success';
-		} else {
-			$state = 'failure';
-		}
-		$mybb->settings['markpost_force_redirect'] = false;
-		$lang->load('markpost');
-		redirect("showthread.php?tid={$tid}&pid={$pid}#pid{$pid}", $lang->{'markpost_' . $mybb->input['action'] . $state . '_message'}, '', (bool)$mybb->settings['markpost_force_redirect']);
-	}
-}
-
-function markpost_ucpnav()
-{
-	if (markpost_hasmarked()) {
-		global $usercpmenu, $templates, $lang;
-		$lang->load("markpost");
-		eval("\$navitem = \"" . $templates->get("usercp_nav_postmarks") . "\";");
-		$usercpmenu = preg_replace('~(.*)' . preg_quote('</', '~') . '~su', '${1}' . $navitem . '</', $usercpmenu);
-	}
-}
-
-function markpost_hasmarked($uid = 0)
-{
-	if (!$uid) {
-		global $mybb;
-		if ($mybb->user['uid'] > 0) {
-			$uid = $mybb->user['uid'];
-		} else {
-			error_no_permission();
-		}
-	}
-	global $db;
-	$query = $db->simple_select("markpost", "DISTINCT 1 uid", "uid='{$uid}'");
-	return !empty($db->fetch_array($query));
-}
-
-function markpost_listdown()
-{
-	global $mybb, $lang;
-	if ($mybb->get_input('action') == "postmarks") {
-		$lang->load('markpost');
-		if (markpost_hasmarked()) {
-			global $db, $templates, $theme, $header, $footer, $headerinclude, $usercpnav, $parser;
-			add_breadcrumb($lang->nav_usercp, "usercp.php");
-			add_breadcrumb($lang->markpost_title);
-
-			$postmarks = "";
-			$alt_row = alt_trow(true);
-
-			$q = $db->query("
-				SELECT p.uid as poster, p.subject, p.message as post, p.dateline as postdate,
-				t.uid as originator, t.dateline as threaddate, t.subject as tsubject, t.fid, f.name as forum,
-				m.pid, m.tid, m.dateline as markdate
-				FROM " . TABLE_PREFIX . "markpost m
-				LEFT JOIN " . TABLE_PREFIX . "posts p on (m.pid = p.pid)
-				LEFT JOIN " . TABLE_PREFIX . "threads t on (m.tid = t.tid)
-				LEFT JOIN " . TABLE_PREFIX . "forums f on (t.fid = f.fid)
-				WHERE m.uid='{$mybb->user['uid']}'
-				ORDER BY m.dateline DESC
-			");
-
-			while ($mark = $db->fetch_array($q)) {
-				foreach (['mark', 'post', 'thread'] as $stamp) {
-					$mark[$stamp . 'date'] = my_date('relative', $mark[$stamp . 'date']);
-				}
-
-				foreach (['subject', 'tsubject'] as $subj) {
-					$trail = (my_strlen($mark[$subj]) > 50) ? "..." : "";
-					$mark[$subj] = htmlspecialchars_uni(my_substr($mark[$subj], 0, 50) . $trail);
-				}
-
-				$mark['poster'] = get_user($mark['poster']);
-				$parser_options = array(
-					'allow_html' => 0,
-					'allow_mycode' => 1,
-					'allow_smilies' => 0,
-					'allow_imgcode' => 0,
-					'me_username' => $mark['poster']['username'],
-					'filter_badwords' => 1
-				);
-				$mark['post'] = strip_tags($parser->text_parse_message($mark['post'], $parser_options));
-				if (my_strlen($mark['post']) > 160) {
-					$mark['post'] = my_substr($mark['post'], 0, 160) . "...";
-				}
-				$mark['poster'] = build_profile_link(format_name(htmlspecialchars_uni($mark['poster']['username']), $mark['poster']['usergroup'], $mark['poster']['displaygroup']), $mark['poster']['uid']);
-
-				$mark['originator'] = get_user($mark['originator']);
-				$mark['originator'] = build_profile_link(format_name(htmlspecialchars_uni($mark['originator']['username']), $mark['originator']['usergroup'], $mark['originator']['displaygroup']), $mark['originator']['uid']);
-				eval("\$postmarks .= \"" . $templates->get("usercp_postmarks_post") . "\";");
-				$alt_row = alt_trow();
-			}
-
-			if (empty($postmarks)) {
-				eval("\$postmarks = \"" . $templates->get("usercp_postmarks_nopost") . "\";");
-			}
-
-			eval("\$postmarks_data = \"" . $templates->get("usercp_postmarks") . "\";");
-			output_page($postmarks_data);
-		} else {
-			error($lang->markpost_nomarked_found, $lang->markpost_nomatk_title);
-		}
-	}
-}
-
-function markpost_wipedupes($array)
-{
-	// TODO: Remove duplicate entries from database and return filtered array
-	return $array;
-}
-
-function markpost_info()
-{
-	return array(
-		'name' => 'Bookmark Post',
-		'description' => 'Bookmark posts those are important to get quick access on a later stage.',
-		'website' => 'https://mybb.group/Thread-Mark-Post',
-		'author' => 'effone</a> of <a href="https://mybb.group">MyBBGroup',
-		'authorsite' => 'https://eff.one',
-		'version' => '1.0.0',
-		'compatibility' => '18*',
-		'codename' => 'markpost',
-	);
-}
-
-function markpost_activate()
-{
-	require MYBB_ROOT . "inc/adminfunctions_templates.php";
-	find_replace_templatesets('postbit_posturl', '#<strong><a href=#', '<!-- markpost -->{$post[\'mark\']}<!-- /markpost --><strong><a href=');
-}
-
-function markpost_deactivate()
-{
-	require MYBB_ROOT . "inc/adminfunctions_templates.php";
-	find_replace_templatesets('postbit_posturl', '#\<!--\smarkpost\s--\>(.+)\<!--\s\/markpost\s--\>#is', '', 0);
-}
-
-function markpost_install()
-{
-	global $db;
-
-	// Install templates
-	$templates = array();
-	foreach (glob(MYBB_ROOT . 'inc/plugins/markpost/*.htm') as $template) {
-		$templates[] = array(
-			'title' => $db->escape_string(strtolower(basename($template, '.htm'))),
-			'template' => $db->escape_string(@file_get_contents($template)),
-			'sid' => -2,
-			'version' => 100,
-			'dateline' => TIME_NOW,
+if (defined('IN_ADMINCP')) {
+	function markpost_info()
+	{
+		return array(
+			'name' => 'Bookmark Post',
+			'description' => 'Bookmark posts those are important to get quick access on a later stage.',
+			'website' => 'https://mybb.group/Thread-Mark-Post',
+			'author' => 'effone</a> of <a href="https://mybb.group">MyBBGroup',
+			'authorsite' => 'https://eff.one',
+			'version' => '1.0.0',
+			'compatibility' => '18*',
+			'codename' => 'markpost',
 		);
 	}
-	if (!empty($templates)) {
-		$db->insert_query_multiple('templates', $templates);
+
+	function markpost_activate()
+	{
+		require MYBB_ROOT . "inc/adminfunctions_templates.php";
+		find_replace_templatesets('postbit_posturl', '#<strong><a href=#', '<!-- markpost -->{$post[\'mark\']}<!-- /markpost --><strong><a href=');
 	}
 
-	$db->query(
-		"CREATE TABLE IF NOT EXISTS " . TABLE_PREFIX . "markpost (
-		mid int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
-		uid int(10) UNSIGNED NOT NULL,
-		pid int(10) UNSIGNED NOT NULL,
-		tid int(10) UNSIGNED NOT NULL,
-		notes varchar(400) NOT NULL default '',
-		dateline int(10) UNSIGNED NOT NULL,
-		PRIMARY KEY (`mid`),
-		INDEX (`uid`, `dateline`)
-        );"
-	);
+	function markpost_deactivate()
+	{
+		require MYBB_ROOT . "inc/adminfunctions_templates.php";
+		find_replace_templatesets('postbit_posturl', '#\<!--\smarkpost\s--\>(.+)\<!--\s\/markpost\s--\>#is', '', 0);
+	}
 
-	// Build Plugin Settings
-	$markpost_group = array(
-		"name" => "markpost",
-		"title" => "markpost",
-		"description" => 'Mark a post as important to get quick access on a later stage.',
-		"disporder" => "9",
-		"isdefault" => "0",
-	);
-	$db->insert_query("settinggroups", $markpost_group);
-	$gid = $db->insert_id();
-	$disporder = 0;
-}
+	function markpost_install()
+	{
+		global $db;
 
-function markpost_is_installed()
-{
-	global $db;
-	$query = $db->simple_select("settinggroups", "gid", "name='markpost'");
-	$gid = $db->fetch_field($query, "gid");
-
-	return !empty($gid);
-}
-
-function markpost_uninstall()
-{
-	global $mybb, $db;
-
-	if ($db->table_exists('markpost')) {
-		if ($mybb->request_method != 'post') {
-			global $page, $lang;
-			$lang->load('markpost');
-			$page->output_confirm_action('index.php?module=config-plugins&action=deactivate&uninstall=1&plugin=markpost', $lang->markpost_uninstall_message, $lang->markpost_uninstall);
-		} else {
-			// Only remove the database tables if the admin has selected NOT to keep data.
-			if (!isset($mybb->input['no'])) {
-				$db->query("drop TABLE " . TABLE_PREFIX . "markpost");
-			}
-
-			//$db->delete_query("settings", "name LIKE '%ipatrol%'");
-			$db->delete_query("settinggroups", "name='markpost'");
-
-			// Delete Templates
-			$templates = array();
-			foreach (glob(MYBB_ROOT . 'inc/plugins/markpost/*.htm') as $template) {
-				$templates[] = "'" . strtolower(basename($template, '.htm')) . "'";
-			}
-			if (!empty($templates)) $db->delete_query('templates', 'title IN (' . implode(',', $templates) . ')');
+		// Install templates
+		$templates = array();
+		foreach (glob(MYBB_ROOT . 'inc/plugins/markpost/*.htm') as $template) {
+			$templates[] = array(
+				'title' => $db->escape_string(strtolower(basename($template, '.htm'))),
+				'template' => $db->escape_string(@file_get_contents($template)),
+				'sid' => -2,
+				'version' => 100,
+				'dateline' => TIME_NOW,
+			);
 		}
+		if (!empty($templates)) {
+			$db->insert_query_multiple('templates', $templates);
+		}
+
+		$db->query(
+			"CREATE TABLE IF NOT EXISTS " . TABLE_PREFIX . "markpost (
+			mid int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+			uid int(10) UNSIGNED NOT NULL,
+			pid int(10) UNSIGNED NOT NULL,
+			tid int(10) UNSIGNED NOT NULL,
+			notes varchar(400) NOT NULL default '',
+			dateline int(10) UNSIGNED NOT NULL,
+			PRIMARY KEY (`mid`),
+			INDEX (`uid`, `dateline`)
+			);"
+		);
+
+		// Build Plugin Settings
+		$markpost_group = array(
+			"name" => "markpost",
+			"title" => "markpost",
+			"description" => 'Mark a post as important to get quick access on a later stage.',
+			"disporder" => "9",
+			"isdefault" => "0",
+		);
+		$db->insert_query("settinggroups", $markpost_group);
+		$gid = $db->insert_id();
+		$disporder = 0;
+	}
+
+	function markpost_is_installed()
+	{
+		global $db;
+		$query = $db->simple_select("settinggroups", "gid", "name='markpost'");
+		$gid = $db->fetch_field($query, "gid");
+
+		return !empty($gid);
+	}
+
+	function markpost_uninstall()
+	{
+		global $mybb, $db;
+
+		if ($db->table_exists('markpost')) {
+			if ($mybb->request_method != 'post') {
+				global $page, $lang;
+				$lang->load('markpost');
+				$page->output_confirm_action('index.php?module=config-plugins&action=deactivate&uninstall=1&plugin=markpost', $lang->markpost_uninstall_message, $lang->markpost_uninstall);
+			} else {
+				// Only remove the database tables if the admin has selected NOT to keep data.
+				if (!isset($mybb->input['no'])) {
+					$db->query("drop TABLE " . TABLE_PREFIX . "markpost");
+				}
+
+				//$db->delete_query("settings", "name LIKE '%ipatrol%'");
+				$db->delete_query("settinggroups", "name='markpost'");
+
+				// Delete Templates
+				$templates = array();
+				foreach (glob(MYBB_ROOT . 'inc/plugins/markpost/*.htm') as $template) {
+					$templates[] = "'" . strtolower(basename($template, '.htm')) . "'";
+				}
+				if (!empty($templates)) $db->delete_query('templates', 'title IN (' . implode(',', $templates) . ')');
+			}
+		}
+	}
+} else {
+	$plugins->add_hook('postbit', 'markpost_stamp');
+	$plugins->add_hook('showthread_start', 'markpost_commit');
+	$plugins->add_hook('usercp_menu', 'markpost_ucpnav', 35);
+	$plugins->add_hook('usercp_start', 'markpost_listdown');
+
+	function markpost_stamp(&$post)
+	{
+		global $mybb;
+		if ((int)$post['pid'] > 0 & (int)$mybb->user['uid'] > 0) {
+			global $templates, $lang, $postcounter;
+			$un = "";
+
+			$lang->load('markpost');
+			static $postmarked = array();
+			if (!isset($postmarked[$mybb->user['uid']][$post['tid']])) {
+				global $db;
+				$postmarked[$mybb->user['uid']][$post['tid']] = array();
+				$q = $db->simple_select('markpost', 'pid', 'uid=' . $mybb->user['uid'] . ' AND tid=' . $post['tid']);
+				while ($marked = $db->fetch_array($q)) {
+					$postmarked[$mybb->user['uid']][$post['tid']][] = $marked['pid'];
+				}
+			}
+			if (count($postmarked[$mybb->user['uid']][$post['tid']]) !== count(array_unique($postmarked[$mybb->user['uid']][$post['tid']]))) {
+				$postmarked[$mybb->user['uid']][$post['tid']] = markpost_wipedupes($postmarked[$mybb->user['uid']][$post['tid']]);
+			}
+			if (in_array($post['pid'], $postmarked[$mybb->user['uid']][$post['tid']])) $un = 'un';
+
+			$post_number = my_number_format($postcounter);
+			$marktext = $lang->{'markpost_' . $un . 'mark_text'};
+			$marktip = $lang->{'markpost_' . $un . 'mark_tip'};
+
+			eval("\$post['mark'] = \"" . $templates->get("postbit_marklink") . "\";");
+			eval("\$post['posturl'] = \"" . $templates->get("postbit_posturl") . "\";"); // Stupid hook is late. Regenerate
+		}
+	}
+
+	function markpost_commit()
+	{
+		global $mybb, $lang, $db;
+
+		$mybb->input['action'] = $mybb->get_input('action');
+		if ($mybb->input['action'] == "mark" || $mybb->input['action'] == "unmark") {
+			$uid = $mybb->user['uid'];
+			$tid = $mybb->get_input('tid', MyBB::INPUT_INT);
+			$pid = $mybb->get_input('pid', MyBB::INPUT_INT);
+
+			if (!$uid || !$tid || !$pid) {
+				error_no_permission();
+			}
+			if ($mybb->input['action'] == 'mark') {
+				$db->insert_query('markpost', array('pid' => $pid, 'uid' => $uid, 'tid' => $tid, 'dateline' => TIME_NOW));
+			} else {
+				$db->delete_query("markpost", "pid='{$pid}' AND uid='{$uid}'");
+			}
+			if ($db->affected_rows()) {
+				$state = 'success';
+			} else {
+				$state = 'failure';
+			}
+			$mybb->settings['markpost_force_redirect'] = false;
+			$lang->load('markpost');
+			redirect("showthread.php?tid={$tid}&pid={$pid}#pid{$pid}", $lang->{'markpost_' . $mybb->input['action'] . $state . '_message'}, '', (bool)$mybb->settings['markpost_force_redirect']);
+		}
+	}
+
+	function markpost_ucpnav()
+	{
+		if (markpost_hasmarked()) {
+			global $usercpmenu, $templates, $lang;
+			$lang->load("markpost");
+			eval("\$navitem = \"" . $templates->get("usercp_nav_postmarks") . "\";");
+			$usercpmenu = preg_replace('~(.*)' . preg_quote('</', '~') . '~su', '${1}' . $navitem . '</', $usercpmenu);
+		}
+	}
+
+	function markpost_hasmarked($uid = 0)
+	{
+		if (!$uid) {
+			global $mybb;
+			if ($mybb->user['uid'] > 0) {
+				$uid = $mybb->user['uid'];
+			} else {
+				error_no_permission();
+			}
+		}
+		global $db;
+		$query = $db->simple_select("markpost", "DISTINCT 1 uid", "uid='{$uid}'");
+		return !empty($db->fetch_array($query));
+	}
+
+	function markpost_listdown()
+	{
+		global $mybb, $lang;
+		if ($mybb->get_input('action') == "postmarks") {
+			$lang->load('markpost');
+			if (markpost_hasmarked()) {
+				global $db, $templates, $theme, $header, $footer, $headerinclude, $usercpnav, $parser;
+				add_breadcrumb($lang->nav_usercp, "usercp.php");
+				add_breadcrumb($lang->markpost_title);
+
+				$postmarks = "";
+				$alt_row = alt_trow(true);
+
+				$q = $db->query("
+					SELECT p.uid as poster, p.subject, p.message as post, p.dateline as postdate,
+					t.uid as originator, t.dateline as threaddate, t.subject as tsubject, t.fid, f.name as forum,
+					m.pid, m.tid, m.dateline as markdate
+					FROM " . TABLE_PREFIX . "markpost m
+					LEFT JOIN " . TABLE_PREFIX . "posts p on (m.pid = p.pid)
+					LEFT JOIN " . TABLE_PREFIX . "threads t on (m.tid = t.tid)
+					LEFT JOIN " . TABLE_PREFIX . "forums f on (t.fid = f.fid)
+					WHERE m.uid='{$mybb->user['uid']}'
+					ORDER BY m.dateline DESC
+				");
+
+				while ($mark = $db->fetch_array($q)) {
+					foreach (['mark', 'post', 'thread'] as $stamp) {
+						$mark[$stamp . 'date'] = my_date('relative', $mark[$stamp . 'date']);
+					}
+
+					foreach (['subject', 'tsubject'] as $subj) {
+						$trail = (my_strlen($mark[$subj]) > 50) ? "..." : "";
+						$mark[$subj] = htmlspecialchars_uni(my_substr($mark[$subj], 0, 50) . $trail);
+					}
+
+					$mark['poster'] = get_user($mark['poster']);
+					$parser_options = array(
+						'allow_html' => 0,
+						'allow_mycode' => 1,
+						'allow_smilies' => 0,
+						'allow_imgcode' => 0,
+						'me_username' => $mark['poster']['username'],
+						'filter_badwords' => 1
+					);
+					$mark['post'] = strip_tags($parser->text_parse_message($mark['post'], $parser_options));
+					if (my_strlen($mark['post']) > 160) {
+						$mark['post'] = my_substr($mark['post'], 0, 160) . "...";
+					}
+					$mark['poster'] = build_profile_link(format_name(htmlspecialchars_uni($mark['poster']['username']), $mark['poster']['usergroup'], $mark['poster']['displaygroup']), $mark['poster']['uid']);
+
+					$mark['originator'] = get_user($mark['originator']);
+					$mark['originator'] = build_profile_link(format_name(htmlspecialchars_uni($mark['originator']['username']), $mark['originator']['usergroup'], $mark['originator']['displaygroup']), $mark['originator']['uid']);
+					eval("\$postmarks .= \"" . $templates->get("usercp_postmarks_post") . "\";");
+					$alt_row = alt_trow();
+				}
+
+				if (empty($postmarks)) {
+					eval("\$postmarks = \"" . $templates->get("usercp_postmarks_nopost") . "\";");
+				}
+
+				eval("\$postmarks_data = \"" . $templates->get("usercp_postmarks") . "\";");
+				output_page($postmarks_data);
+			} else {
+				error($lang->markpost_nomarked_found, $lang->markpost_nomatk_title);
+			}
+		}
+	}
+
+	function markpost_wipedupes($array)
+	{
+		// TODO: Remove duplicate entries from database and return filtered array
+		return $array;
 	}
 }
