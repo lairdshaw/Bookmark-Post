@@ -190,7 +190,7 @@ if (defined('IN_ADMINCP')) {
 		}
 	}
 
-	function markpost_hasmarked($uid = 0)
+	function markpost_hasmarked($return_count = false, $uid = 0)
 	{
 		if (!$uid) {
 			global $mybb;
@@ -201,8 +201,9 @@ if (defined('IN_ADMINCP')) {
 			}
 		}
 		global $db;
-		$query = $db->simple_select("markpost", "DISTINCT 1 uid", "uid='{$uid}'");
-		return !empty($db->fetch_array($query));
+		$select = $return_count ? "COUNT(mid) AS marked" : "DISTINCT 1 uid";
+		$query = $db->simple_select("markpost", $select, "uid='{$uid}'");
+		return $return_count ? $db->fetch_field($query, "marked") : !empty($db->fetch_array($query));
 	}
 
 	function markpost_listdown()
@@ -210,15 +211,25 @@ if (defined('IN_ADMINCP')) {
 		global $mybb, $lang;
 		if ($mybb->get_input('action') == "postmarks") {
 			$lang->load('markpost');
-			if (markpost_hasmarked()) {
+			$marked = markpost_hasmarked(true);
+
+			if ($marked > 0) {
 				global $db, $templates, $theme, $header, $footer, $headerinclude, $usercpnav, $parser;
 				add_breadcrumb($lang->nav_usercp, "usercp.php");
 				add_breadcrumb($lang->markpost_title);
 
 				$postmarks = "";
 				$alt_row = alt_trow(true);
+				$perpage = 8; // Settings???
+				$pagenum = $mybb->get_input('page', MyBB::INPUT_INT);
+				if ($pagenum > 0) $offset = ($pagenum - 1) * $perpage;
+				if ($pagenum <= 0 || $pagenum > ceil($marked / $perpage)) // Reset range out
+				{
+					$offset = 0;
+					$pagenum = 1;
+				}
 
-				$q = $db->query("
+				$query = $db->query("
 					SELECT p.uid as poster, p.subject, p.message as post, p.dateline as postdate,
 					t.uid as originator, t.dateline as threaddate, t.subject as tsubject, t.fid, f.name as forum,
 					m.pid, m.tid, m.dateline as markdate
@@ -228,9 +239,10 @@ if (defined('IN_ADMINCP')) {
 					LEFT JOIN " . TABLE_PREFIX . "forums f on (t.fid = f.fid)
 					WHERE m.uid='{$mybb->user['uid']}'
 					ORDER BY m.dateline DESC
+					LIMIT {$perpage} OFFSET {$offset}
 				");
 
-				while ($mark = $db->fetch_array($q)) {
+				while ($mark = $db->fetch_array($query)) {
 					foreach (['mark', 'post', 'thread'] as $stamp) {
 						$mark[$stamp . 'date'] = my_date('relative', $mark[$stamp . 'date']);
 					}
@@ -261,10 +273,7 @@ if (defined('IN_ADMINCP')) {
 					$alt_row = alt_trow();
 				}
 
-				if (empty($postmarks)) {
-					eval("\$postmarks = \"" . $templates->get("usercp_postmarks_nopost") . "\";");
-				}
-
+				$multipage = multipage($marked, $perpage, $pagenum, "usercp.php?action=postmarks");
 				eval("\$postmarks_data = \"" . $templates->get("usercp_postmarks") . "\";");
 				output_page($postmarks_data);
 			} else {

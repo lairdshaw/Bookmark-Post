@@ -3,5 +3,4 @@ A plugin for MyBB to Bookmark posts those are important to get quick access on a
 
 ## TODO:
 - Post Visibility
-- Pagination
 - Some Settings
