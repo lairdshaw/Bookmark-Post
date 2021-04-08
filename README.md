@@ -2,7 +2,6 @@
 A plugin for MyBB to Bookmark posts those are important to get quick access on a later stage
 
 ## TODO:
-- Template Cache
 - Post Visibility
 - Pagination
 - Some Settings

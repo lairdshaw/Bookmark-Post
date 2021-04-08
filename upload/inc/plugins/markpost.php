@@ -117,6 +117,7 @@ if (defined('IN_ADMINCP')) {
 	$plugins->add_hook('showthread_start', 'markpost_commit');
 	$plugins->add_hook('usercp_menu', 'markpost_ucpnav', 35);
 	$plugins->add_hook('usercp_start', 'markpost_listdown');
+	$plugins->add_hook('global_start', 'markpost_templatecache');
 
 	function markpost_stamp(&$post)
 	{
@@ -270,6 +271,19 @@ if (defined('IN_ADMINCP')) {
 				error($lang->markpost_nomarked_found, $lang->markpost_nomatk_title);
 			}
 		}
+	}
+
+	function markpost_templatecache()
+	{
+		global $db, $templatelist;
+		if (!isset($templatelist)) {
+			$templatelist = '';
+		} else {
+			$templatelist .= ', ';
+		}
+		$templatelist .= implode(', ', array_map(function ($tpl) use ($db) {
+			return $db->escape_string(strtolower(basename($tpl, '.htm')));
+		}, (glob(MYBB_ROOT . "inc/plugins/markpost/*.htm"))));
 	}
 
 	function markpost_wipedupes($arr)
