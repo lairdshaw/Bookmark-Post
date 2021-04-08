@@ -1,0 +1,13 @@
+<tr>
+	<td class="{$alt_row}">
+		<a href="showthread.php?tid={$mark['tid']}&pid={$mark['pid']}#pid{$mark['pid']}" target="_self">{$mark['subject']}</a>
+		<br />{$mark['post']}
+		<br />{$lang->by} {$mark['poster']}, {$mark['postdate']}
+	</td>
+	<td class="{$alt_row}">
+		<a href="showthread.php?tid={$mark['tid']}" target="_self">{$mark['tsubject']}</a>
+		<br />{$lang->by} {$mark['originator']}, {$mark['threaddate']}
+		<br />{$lang->markpost_inforum}: <a href="forumdisplay.php?fid={$mark['fid']}" target="_self">{$mark['forum']}</a>
+	</td>
+	<td class="{$alt_row}">{$mark['markdate']}</td>
+</tr>
