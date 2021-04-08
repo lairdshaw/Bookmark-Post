@@ -135,9 +135,10 @@ if (defined('IN_ADMINCP')) {
 					$postmarked[$mybb->user['uid']][$post['tid']][] = $marked['pid'];
 				}
 			}
-			if (count($postmarked[$mybb->user['uid']][$post['tid']]) !== count(array_unique($postmarked[$mybb->user['uid']][$post['tid']]))) {
-				$postmarked[$mybb->user['uid']][$post['tid']] = markpost_wipedupes($postmarked[$mybb->user['uid']][$post['tid']]);
-			}
+
+			// Remove any unwanted duplicate entries from  array as well as database
+			$postmarked[$mybb->user['uid']][$post['tid']] = markpost_wipedupes($postmarked[$mybb->user['uid']][$post['tid']]);
+
 			if (in_array($post['pid'], $postmarked[$mybb->user['uid']][$post['tid']])) $un = 'un';
 
 			$post_number = my_number_format($postcounter);
@@ -271,9 +272,21 @@ if (defined('IN_ADMINCP')) {
 		}
 	}
 
-	function markpost_wipedupes($array)
+	function markpost_wipedupes($arr)
 	{
-		// TODO: Remove duplicate entries from database and return filtered array
-		return $array;
+		$dupes = array_unique(array_intersect($arr, array_unique(array_diff_key($arr, array_unique($arr)))));
+		if (!empty($dupes)) { // We got duplicate entries
+			global $db, $mybb;
+			foreach ($dupes as $dupe) {
+				$db->query(
+					"DELETE FROM " . TABLE_PREFIX . "markpost 
+					WHERE uid=" . $mybb->user['uid'] . " AND pid={$dupe} and mid not in
+					( SELECT * FROM 
+						(SELECT MIN(mid) FROM " . TABLE_PREFIX . "markpost WHERE uid=" . $mybb->user['uid'] . " AND pid={$dupe}) AS temp
+					)"
+				);
+			}
+		}
+		return array_unique($arr);
 	}
 }
