@@ -261,7 +261,7 @@ if (defined('IN_ADMINCP')) {
 			}
 		}
 		if ($onlyusfids) {
-			$where[] = '((t.fid IN('.implode(',', $onlyusfids).') AND t.uid="'.$uid.'") OR t.fid NOT IN('.implode(',', $onlyusfids).'))';
+			$where[] = '(t.fid IN('.implode(',', $onlyusfids).') AND t.uid="'.$uid.'" OR t.fid NOT IN('.implode(',', $onlyusfids).'))';
 		}
 
 		return implode(' AND ', $where);
