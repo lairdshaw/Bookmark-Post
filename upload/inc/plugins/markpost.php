@@ -253,6 +253,17 @@ if (defined('IN_ADMINCP')) {
 			$where[] = "t.fid NOT IN ({$inactiveforums})";
 		}
 
+		$onlyusfids = array();
+		$group_permissions = forum_permissions();
+		foreach ($group_permissions as $fid => $forum_permissions) {
+			if ($forum_permissions['canonlyviewownthreads'] == 1) {
+				$onlyusfids[] = $fid;
+			}
+		}
+		if ($onlyusfids) {
+			$where[] = '(t.fid IN('.implode(',', $onlyusfids).') AND t.uid="'.$uid.'" OR t.fid NOT IN('.implode(',', $onlyusfids).'))';
+		}
+
 		return implode(' AND ', $where);
 	}
 
