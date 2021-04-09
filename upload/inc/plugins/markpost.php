@@ -7,9 +7,11 @@ if (!defined("IN_MYBB")) {
 if (defined('IN_ADMINCP')) {
 	function markpost_info()
 	{
+		global $lang;
+		$lang->load('markpost');
 		return array(
-			'name' => 'Bookmark Post',
-			'description' => 'Bookmark posts those are important to get quick access on a later stage.',
+			'name' => $lang->markpost_title,
+			'description' => $lang->markpost_desc,
 			'website' => 'https://mybb.group/Thread-Bookmark-Post',
 			'author' => 'effone</a>, <a href="https://creativeandcritical.net">Laird</a> & <a href="https://ougc.network">Omar G.',
 			'authorsite' => 'https://eff.one',
@@ -33,7 +35,8 @@ if (defined('IN_ADMINCP')) {
 
 	function markpost_install()
 	{
-		global $db;
+		global $db, $lang;
+		$lang->load('markpost');
 
 		// Install templates
 		$templates = array();
@@ -51,7 +54,7 @@ if (defined('IN_ADMINCP')) {
 		}
 
 		$db->query(
-			"CREATE TABLE IF NOT EXISTS " . TABLE_PREFIX . "markpost (
+			"CREATE TABLE IF NOT EXISTS {$db->table_prefix}markpost (
 			mid int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
 			uid int(10) UNSIGNED NOT NULL,
 			pid int(10) UNSIGNED NOT NULL,
@@ -66,14 +69,31 @@ if (defined('IN_ADMINCP')) {
 		// Build Plugin Settings
 		$markpost_group = array(
 			"name" => "markpost",
-			"title" => "markpost",
-			"description" => 'Mark a post as important to get quick access on a later stage.',
+			"title" => $lang->markpost_title,
+			"description" => $lang->markpost_desc,
 			"disporder" => "9",
 			"isdefault" => "0",
 		);
 		$db->insert_query("settinggroups", $markpost_group);
 		$gid = $db->insert_id();
+		$markpost_opts = array(
+			['per_page', 'numeric', '8'],
+			['force_redirect', 'onoff', '1']
+		);
 		$disporder = 0;
+		$markpost_settings = array();
+
+		foreach ($markpost_opts as $markpost_opt) {
+			$markpost_opt[0] = 'markpost_' . $markpost_opt[0];
+			$markpost_opt = array_combine(['name', 'optionscode', 'value'], $markpost_opt);
+			$markpost_opt['title'] = $lang->{$markpost_opt['name'] . "_title"};
+			$markpost_opt['description'] = $lang->{$markpost_opt['name'] . "_desc"};
+			$markpost_opt['disporder'] = $disporder++;
+			$markpost_opt['gid'] = intval($gid);
+			$markpost_settings[] = $markpost_opt;
+		}
+		$db->insert_query_multiple('settings', $markpost_settings);
+		rebuild_settings();
 	}
 
 	function markpost_is_installed()
@@ -97,10 +117,10 @@ if (defined('IN_ADMINCP')) {
 			} else {
 				// Only remove the database tables if the admin has selected NOT to keep data.
 				if (!isset($mybb->input['no'])) {
-					$db->query("drop TABLE " . TABLE_PREFIX . "markpost");
+					$db->query("drop TABLE {$db->table_prefix}markpost");
 				}
 
-				//$db->delete_query("settings", "name LIKE '%ipatrol%'");
+				$db->delete_query("settings", "name LIKE '%markpost%'");
 				$db->delete_query("settinggroups", "name='markpost'");
 
 				// Delete Templates
@@ -139,9 +159,9 @@ if (defined('IN_ADMINCP')) {
 				if (!empty($dupes)) {
 					foreach ($dupes as $dupe) {
 						$db->query(
-							"DELETE FROM " . TABLE_PREFIX . "markpost WHERE uid=" . $mybb->user['uid'] . " AND pid={$dupe} and mid not in
+							"DELETE FROM {$db->table_prefix}markpost WHERE uid=" . $mybb->user['uid'] . " AND pid={$dupe} and mid not in
 							( SELECT * FROM 
-								(SELECT MIN(mid) FROM " . TABLE_PREFIX . "markpost WHERE uid={$mybb->user['uid']} AND pid={$dupe}) AS temp
+								(SELECT MIN(mid) FROM {$db->table_prefix}markpost WHERE uid={$mybb->user['uid']} AND pid={$dupe}) AS temp
 							)"
 						);
 					}
@@ -184,7 +204,7 @@ if (defined('IN_ADMINCP')) {
 			} else {
 				$state = 'failure';
 			}
-			$mybb->settings['markpost_force_redirect'] = false;
+
 			$lang->load('markpost');
 			redirect("showthread.php?tid={$tid}&pid={$pid}#pid{$pid}", $lang->{'markpost_' . $mybb->input['action'] . $state . '_message'}, '', (bool)$mybb->settings['markpost_force_redirect']);
 		}
@@ -281,7 +301,8 @@ if (defined('IN_ADMINCP')) {
 
 				$postmarks = "";
 				$alt_row = alt_trow(true);
-				$perpage = 8; // Settings???
+				$perpage = (int)$mybb->settings['markpost_per_page'];
+				if (empty($perpage) || $perpage < 1) $perpage = 8;
 				$pagenum = $mybb->get_input('page', MyBB::INPUT_INT);
 				if ($pagenum > 0) $offset = ($pagenum - 1) * $perpage;
 				if ($pagenum <= 0 || $pagenum > ceil($marked / $perpage)) // Reset range out
@@ -296,10 +317,10 @@ if (defined('IN_ADMINCP')) {
 					SELECT p.uid as poster, p.subject, p.message as post, p.dateline as postdate,
 					t.uid as originator, t.dateline as threaddate, t.subject as tsubject, t.fid, f.name as forum,
 					m.pid, m.tid, m.dateline as markdate
-					FROM " . TABLE_PREFIX . "markpost m
-					LEFT JOIN " . TABLE_PREFIX . "posts p on (m.pid = p.pid)
-					LEFT JOIN " . TABLE_PREFIX . "threads t on (m.tid = t.tid)
-					LEFT JOIN " . TABLE_PREFIX . "forums f on (t.fid = f.fid)
+					FROM {$db->table_prefix}markpost m
+					LEFT JOIN {$db->table_prefix}posts p on (m.pid = p.pid)
+					LEFT JOIN {$db->table_prefix}threads t on (m.tid = t.tid)
+					LEFT JOIN {$db->table_prefix}forums f on (t.fid = f.fid)
 					WHERE {$where}
 					ORDER BY m.dateline DESC
 					LIMIT {$perpage} OFFSET {$offset}
