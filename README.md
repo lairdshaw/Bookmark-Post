@@ -2,5 +2,6 @@
 A plugin for MyBB to Bookmark posts those are important to get quick access on a later stage
 
 ## TODO:
-- Post Visibility
 - Some Settings
+## Planned Features
+- Add personalized notes against each bookmarked post
