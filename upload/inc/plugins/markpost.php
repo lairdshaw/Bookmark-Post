@@ -210,10 +210,57 @@ if (defined('IN_ADMINCP')) {
 				error_no_permission();
 			}
 		}
+
+		// Build where clause
+		$where = markpost_build_clause($uid);
+
 		global $db;
-		$select = $return_count ? "COUNT(mid) AS marked" : "DISTINCT 1 uid";
-		$query = $db->simple_select("markpost", $select, "uid='{$uid}'");
+		$select = $return_count ? "COUNT(m.mid) AS marked" : "DISTINCT 1 m.uid";
+		$query = $db->simple_select(
+			"markpost m LEFT JOIN {$db->table_prefix}threads t ON (m.tid=t.tid) LEFT JOIN {$db->table_prefix}posts p ON (m.pid=p.pid)",
+			$select,
+			$where
+		);
 		return $return_count ? $db->fetch_field($query, "marked") : !empty($db->fetch_array($query));
+	}
+
+	function markpost_build_clause($uid)
+	{
+		global $mybb;
+
+		// Build where clause
+		$where = ["m.uid='{$uid}'"];
+
+		$visible_states = [1];
+
+		if(is_moderator(0, 'canviewdeleted', $uid))
+		{
+			$visible_states[] = -1;
+		}
+
+		if(is_moderator(0, 'canviewunapprove', $uid))
+		{
+			$visible_states[] = 0;
+		}
+
+		$visible_states = implode(',', $visible_states);
+
+		$where[] = "t.visible IN ({$visible_states})";
+
+		$where[] = "p.visible IN ({$visible_states})";
+
+		// not required to check for uid really but markpost_hasmarked() allows for custom uid, so to be consistent with current code.. note that get_unviewable_forums() always checks for the current user
+		if((int)$uid === (int)$mybb->user['uid'] && $unviewable_forums = get_unviewable_forums())
+		{
+			$where[] = "t.fid NOT IN ({$unviewable_forums})";
+		}
+
+		if($inactiveforums = get_inactive_forums())
+		{
+			$where[] = "t.fid NOT IN ({$inactiveforums})";
+		}
+
+		return implode(' AND ', $where);
 	}
 
 	function markpost_listdown()
@@ -239,6 +286,9 @@ if (defined('IN_ADMINCP')) {
 					$pagenum = 1;
 				}
 
+				// Build where clause
+				$where = markpost_build_clause($mybb->user['uid']);
+
 				$query = $db->query("
 					SELECT p.uid as poster, p.subject, p.message as post, p.dateline as postdate,
 					t.uid as originator, t.dateline as threaddate, t.subject as tsubject, t.fid, f.name as forum,
@@ -247,7 +297,7 @@ if (defined('IN_ADMINCP')) {
 					LEFT JOIN " . TABLE_PREFIX . "posts p on (m.pid = p.pid)
 					LEFT JOIN " . TABLE_PREFIX . "threads t on (m.tid = t.tid)
 					LEFT JOIN " . TABLE_PREFIX . "forums f on (t.fid = f.fid)
-					WHERE m.uid='{$mybb->user['uid']}'
+					WHERE {$where}
 					ORDER BY m.dateline DESC
 					LIMIT {$perpage} OFFSET {$offset}
 				");
