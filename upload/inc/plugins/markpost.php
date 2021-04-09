@@ -11,8 +11,8 @@ if (defined('IN_ADMINCP')) {
 			'name' => 'Bookmark Post',
 			'description' => 'Bookmark posts those are important to get quick access on a later stage.',
 			'website' => 'https://mybb.group/Thread-Bookmark-Post',
-			'author' => 'effone</a> & <a href="https://ougc.network">Omar G.',
-			'authorsite' => 'https://mybb.group',
+			'author' => 'effone</a>, <a href="https://creativeandcritical.net">Laird</a> & <a href="https://ougc.network">Omar G.',
+			'authorsite' => 'https://eff.one',
 			'version' => '1.0.0',
 			'compatibility' => '18*',
 			'codename' => 'markpost',
@@ -115,9 +115,9 @@ if (defined('IN_ADMINCP')) {
 } else {
 	$plugins->add_hook('postbit', 'markpost_stamp');
 	$plugins->add_hook('showthread_start', 'markpost_commit');
-	$plugins->add_hook('usercp_menu', 'markpost_ucpnav', 35);
+	$plugins->add_hook('usercp_menu', 'markpost_ucp_nav', 35);
 	$plugins->add_hook('usercp_start', 'markpost_listdown');
-	$plugins->add_hook('global_start', 'markpost_templatecache');
+	$plugins->add_hook('global_start', 'markpost_template_cache');
 
 	function markpost_stamp(&$post)
 	{
@@ -190,9 +190,9 @@ if (defined('IN_ADMINCP')) {
 		}
 	}
 
-	function markpost_ucpnav()
+	function markpost_ucp_nav()
 	{
-		if (markpost_hasmarked()) {
+		if (markpost_has_marked()) {
 			global $usercpmenu, $templates, $lang;
 			$lang->load("markpost");
 			eval("\$navitem = \"" . $templates->get("usercp_nav_postmarks") . "\";");
@@ -200,7 +200,7 @@ if (defined('IN_ADMINCP')) {
 		}
 	}
 
-	function markpost_hasmarked($return_count = false, $uid = 0)
+	function markpost_has_marked($return_count = false, $uid = 0)
 	{
 		if (!$uid) {
 			global $mybb;
@@ -244,7 +244,7 @@ if (defined('IN_ADMINCP')) {
 		$where[] = "t.visible IN ({$visible_states})";
 		$where[] = "p.visible IN ({$visible_states})";
 
-		// not required to check for uid really but markpost_hasmarked() allows for custom uid, so to be consistent with current code.. note that get_unviewable_forums() always checks for the current user
+		// not required to check for uid really but markpost_has_marked() allows for custom uid, so to be consistent with current code.. note that get_unviewable_forums() always checks for the current user
 		if ((int)$uid === (int)$mybb->user['uid'] && $unviewable_forums = get_unviewable_forums()) {
 			$where[] = "t.fid NOT IN ({$unviewable_forums})";
 		}
@@ -261,7 +261,7 @@ if (defined('IN_ADMINCP')) {
 			}
 		}
 		if ($onlyusfids) {
-			$where[] = '(t.fid IN('.implode(',', $onlyusfids).') AND t.uid="'.$uid.'" OR t.fid NOT IN('.implode(',', $onlyusfids).'))';
+			$where[] = '(t.fid IN(' . implode(',', $onlyusfids) . ') AND t.uid="' . $uid . '" OR t.fid NOT IN(' . implode(',', $onlyusfids) . '))';
 		}
 
 		return implode(' AND ', $where);
@@ -272,7 +272,7 @@ if (defined('IN_ADMINCP')) {
 		global $mybb, $lang;
 		if ($mybb->get_input('action') == "postmarks") {
 			$lang->load('markpost');
-			$marked = markpost_hasmarked(true);
+			$marked = markpost_has_marked(true);
 
 			if ($marked > 0) {
 				global $db, $templates, $theme, $header, $footer, $headerinclude, $usercpnav, $parser;
@@ -345,7 +345,7 @@ if (defined('IN_ADMINCP')) {
 		}
 	}
 
-	function markpost_templatecache()
+	function markpost_template_cache()
 	{
 		global $db, $templatelist;
 		if (!isset($templatelist)) {
