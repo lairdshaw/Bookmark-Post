@@ -142,7 +142,7 @@ if (defined('IN_ADMINCP')) {
 	function markpost_stamp(&$post)
 	{
 		global $mybb;
-		if ((int)$post['pid'] > 0 & (int)$mybb->user['uid'] > 0) {
+		if ((int)$post['pid'] > 0 & (int)$mybb->user['uid'] > 0 && (int)$post['tid'] > 0) {
 			global $db, $templates, $lang, $postcounter;
 
 			$lang->load('markpost');
